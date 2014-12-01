@@ -28,17 +28,21 @@
 #include "sprite.c"
 #include "bcd.c"
 
-#define X    (opcode.byte.high & 0x0F)
-#define Y    (opcode.byte.low >> 4)
-#define XY   ((opcode.word & 0x0FF0) >> 4)
-#define KK   (opcode.byte.low)
-#define K    (opcode.byte.low & 0x0F)
-#define ADDR (opcode.word & 0x0FFF)
+#define X   (opcode.byte.high & 0x0F)
+#define Y   (opcode.byte.low >> 4)
+#define N   (opcode.byte.low & 0x0F)
+#define NN  (opcode.byte.low)
+#define NNN (opcode.word & 0x0FFF)
+
+#define SUCCESS            0
+#define UNSUPPORTED_OPCODE 1
+#define INVALID_OPCODE     2
 
 unsigned int  PC;
 unsigned char SP;
 unsigned int  I;
 unsigned char v[16];
+unsigned char v48[8];
 unsigned char RAM[4096];
 unsigned int  STACK[16];
 unsigned char delay_timer;
@@ -118,9 +122,20 @@ chip8_loop()
 {
   char done;
 
-  done = 0;
+  done = SUCCESS;
   while(!done)
     done = chip8_process();
+
+  switch(done)
+    {
+    case UNSUPPORTED_OPCODE:
+      print_unsupported_opcode(opcode.word);
+      break;
+
+    case INVALID_OPCODE:
+      print_invalid_opcode(opcode.word);
+      break;
+    }
 
   vsync(60 * 3);
 }
@@ -143,52 +158,75 @@ chip8_process()
           */
         case 0xE0:
           gfx_clear(0x1000);
-          break;
+          return SUCCESS;
 
           /*
             00EE - RET
             Return from a subroutine.
 
-            The interpreter sets the program counter to the address at the
-            top of the stack, then subtracts 1 from the stack pointer.
+            The interpreter sets the program counter to the address at
+            the top of the stack, then subtracts 1 from the stack
+            pointer.
           */
         case 0xEE:
           PC = STACK[--SP];
-          break;
+          return SUCCESS;
+
+          /*
+            00FB - SCR
+            Scroll display right
+
+            SCHIP-8 instruction to scroll display 4 pixels to the
+            right.
+          */
+        case 0xFB:
+          return UNSUPPORTED_OPCODE;
+
+          /*
+            00FC - SCL
+            Scroll display left
+
+            SCHIP-8 instruction to scroll display 4 pixels to the
+            left.
+          */
+        case 0xFC:
+          return UNSUPPORTED_OPCODE;
 
           /*
             00FD - EXIT
             Exit CHIP interpreter
 
-            Super Chip-8 instruction to stop the interpreter.
+            SCHIP-8 instruction to stop the interpreter.
            */
         case 0xFD:
-          return 1;
+          return UNSUPPORTED_OPCODE;
 
           /*
             00FE - LOW
             Enable low res (64x32) mode
+
+            SCHIP-8 instruction to enable default / low res mode.
           */
         case 0xFE:
-          break;
+          return UNSUPPORTED_OPCODE;
 
           /*
             00FF - HIGH
             Enable high res (128x64) mode
+
+            SCHIP-8 instruction to enable high res mode.
           */
         case 0xFF:
-          break;
+          return UNSUPPORTED_OPCODE;
 
         default:
-          print_invalidopcode(opcode.word);
-          return 1;
+          return INVALID_OPCODE;
         }
-      break;
 
       /* 0x1nnn : jmp nnn : jump to address nnn */
     case 0x10:
-      PC = ADDR;
-      break;
+      PC = NNN;
+      return SUCCESS;
 
       /*
         2nnn - CALL addr
@@ -199,251 +237,247 @@ chip8_process()
       */
     case 0x20:
       STACK[SP++] = PC;
-      PC = ADDR;
-      break;
+      PC = NNN;
+      return SUCCESS;
 
       /*
-        3xkk - SE Vx, byte
-        Skip next instruction if Vx = kk.
+        3xNN - SE VX, byte
+        Skip next instruction if VX = NN.
 
-        The interpreter compares register Vx to kk, and if they are
+        The interpreter compares register VX to NN, and if they are
         equal, increments the program counter by 2.
       */
     case 0x30:
-      if(v[X] == KK)
+      if(v[X] == NN)
         PC += 2;
-      break;
+      return SUCCESS;
 
       /*
-        4xkk - SNE Vx, byte
-        Skip next instruction if Vx != kk.
+        4xNN - SNE VX, byte
+        Skip next instruction if VX != NN.
 
-        The interpreter compares register Vx to kk, and if they are
+        The interpreter compares register VX to NN, and if they are
         not equal, increments the program counter by 2.
       */
     case 0x40:
-      if(v[X] != KK)
+      if(v[X] != NN)
         PC += 2;
-      break;
+      return SUCCESS;
 
     case 0x50:
       switch(opcode.byte.low & 0x0F)
         {
           /*
-            5xy0 - SE Vx, Vy
-            Skip next instruction if Vx = Vy.
+            5XY0 - SE VX, VY
+            Skip next instruction if VX = VY.
 
-            The interpreter compares register Vx to register Vy, and if
+            The interpreter compares register VX to register VY, and if
             they are equal, increments the program counter by 2.
           */
         case 0x00:
           if(v[X] == v[Y])
             PC += 2;
-          break;
+          return SUCCESS;
 
           /*
-            5xy1 - SGT Vx, Vy
-            Skip next instruction if Vx > Vy.
+            5XY1 - SGT VX, VY
+            Skip next instruction if VX > VY.
 
-            The interpreter compares register Vx to register Vy, and if
-            Vx > Vy, increments the program counter by 2.
+            The interpreter compares register VX to register VY, and if
+            VX > VY, increments the program counter by 2.
           */
         case 0x01:
           if(v[X] > v[Y])
             PC += 2;
-          break;
+          return SUCCESS;
 
           /*
-            5xy2 - SLT Vx, Vy
-            Skip next instruction if Vx < Vy.
+            5XY2 - SLT VX, VY
+            Skip next instruction if VX < VY.
 
-            The interpreter compares register Vx to register Vy, and if
-            Vx < Vy, increments the program counter by 2.
+            The interpreter compares register VX to register VY, and if
+            VX < VY, increments the program counter by 2.
           */
         case 0x02:
           if(v[X] < v[Y])
             PC += 2;
-          break;
+          return SUCCESS;
 
           /*
-            5xy3 - SNE Vx, Vy
-            Skip next instruction if Vx != Vy.
+            5XY3 - SNE VX, VY
+            Skip next instruction if VX != VY.
 
-            The interpreter compares register Vx to register Vy, and if
-            Vx != Vy, increments the program counter by 2.
+            The interpreter compares register VX to register VY, and if
+            VX != VY, increments the program counter by 2.
           */
         case 0x03:
           if(v[X] != v[Y])
             PC += 2;
-          break;
+          return SUCCESS;
 
         default:
-          print_invalidopcode(opcode.word);
-          return 1;
+          return INVALID_OPCODE;
         }
-      break;
 
       /*
-        6xkk - LD Vx, byte
-        Set Vx = kk.
+        6XNN - LD VX, NN
+        Set VX = NN.
 
-        The interpreter puts the value kk into register Vx.
+        The interpreter puts the value NN into register VX.
       */
     case 0x60:
-      v[X] = KK;
-      break;
+      v[X] = NN;
+      return SUCCESS;
 
       /*
-        7xkk - ADD Vx, byte
-        Set Vx = Vx + kk.
+        7xNN - ADD VX, byte
+        Set VX = VX + NN.
 
-        Adds the value kk to the value of register Vx, then stores the
-        result in Vx.
+        Adds the value NN to the value of register VX, then stores the
+        result in VX.
       */
     case 0x70:
-      v[X] += KK;
-      break;
+      v[X] += NN;
+      return SUCCESS;
 
     case 0x80:
       switch(opcode.byte.low & 0x0F)
         {
           /*
-            8xy0 - LD Vx, Vy
-            Set Vx = Vy.
+            8XY0 - LD VX, VY
+            Set VX = VY.
 
-            Stores the value of register Vy in register Vx.
+            Stores the value of register VY in register VX.
           */
         case 0x00:
           v[X] = v[Y];
-          break;
+          return SUCCESS;
 
           /*
-            8xy1 - OR Vx, Vy
-            Set Vx = Vx OR Vy.
+            8XY1 - OR VX, VY
+            Set VX = VX OR VY.
 
-            Performs a bitwise OR on the values of Vx and Vy, then stores
-            the result in Vx. A bitwise OR compares the corrseponding bits
+            Performs a bitwise OR on the values of VX and VY, then stores
+            the result in VX. A bitwise OR compares the corrseponding bits
             from two values, and if either bit is 1, then the same bit in
             the result is also 1. Otherwise, it is 0.
           */
         case 0x01:
           v[X] |= v[Y];
-          break;
+          return SUCCESS;
 
           /*
-            8xy2 - AND Vx, Vy
-            Set Vx = Vx AND Vy.
+            8XY2 - AND VX, VY
+            Set VX = VX AND VY.
 
-            Performs a bitwise AND on the values of Vx and Vy, then stores the
-            result in Vx. A bitwise AND compares the corrseponding bits from two
+            Performs a bitwise AND on the values of VX and VY, then stores the
+            result in VX. A bitwise AND compares the corrseponding bits from two
             values, and if both bits are 1, then the same bit in the result is
             also 1. Otherwise, it is 0.
           */
         case 0x02:
           v[X] &= v[Y];
-          break;
+          return SUCCESS;
 
           /*
-            8xy3 - XOR Vx, Vy
-            Set Vx = Vx XOR Vy.
+            8XY3 - XOR VX, VY
+            Set VX = VX XOR VY.
 
-            Performs a bitwise exclusive OR on the values of Vx and
-            Vy, then stores the result in Vx. An exclusive OR
+            Performs a bitwise exclusive OR on the values of VX and
+            VY, then stores the result in VX. An exclusive OR
             compares the corrseponding bits from two values, and if
             the bits are not both the same, then the corresponding
             bit in the result is set to 1. Otherwise, it is 0.
           */
         case 0x03:
           v[X] ^= v[Y];
-          break;
+          return SUCCESS;
 
           /*
-            8xy4 - ADD Vx, Vy
-            Set Vx = Vx + Vy, set VF = carry.
+            8XY4 - ADD VX, VY
+            Set VX = VX + VY, set VF = carry.
 
-            The values of Vx and Vy are added together. If the result is
+            The values of VX and VY are added together. If the result is
             greater than 8 bits (i.e., > 255,) VF is set to 1, otherwise
             0. Only the lowest 8 bits of the result are kept, and stored
-            in Vx.
+            in VX.
           */
         case 0x04:
-          v[0xF] = ((v[X] + v[Y]) > 0xFF);
+          v[0xF] = ((v[X] + v[Y]) < v[X]);
           v[X] += v[Y];
-          break;
+          return SUCCESS;
 
           /*
-            8xy5 - SUB Vx, Vy
-            Set Vx = Vx - Vy, set VF = NOT borrow.
+            8XY5 - SUB VX, VY
+            Set VX = VX - VY, set VF = NOT borrow.
 
-            If Vx > Vy, then VF is set to 1, otherwise 0. Then Vy is
-            subtracted from Vx, and the results stored in Vx.
+            If VX > VY, then VF is set to 1, otherwise 0. Then VY is
+            subtracted from VX, and the results stored in VX.
           */
         case 0x05:
-          v[0xF] = (v[X] > v[Y]);
+          v[0xF] = (v[X] >= v[Y]);
           v[X] -= v[Y];
-          break;
+          return SUCCESS;
 
           /*
-            8xy6 - SHR Vx {, Vy}
-            Originally: Set Vx = Vy SHR 1
-            Today: Set Vx = Vx SHR 1
+            8XY6 - SHR VX {, VY}
+            Originally: Set VX = VY SHR 1
+            Today: Set VX = VX SHR 1
 
-            If the least-significant bit of Vy is 1, then VF is set to 1,
-            otherwise 0. Then Vy is shifted right by 1 and stored in Vx.
+            If the least-significant bit of VY is 1, then VF is set to 1,
+            otherwise 0. Then VY is shifted right by 1 and stored in VX.
           */
         case 0x06:
           v[0xF] = (v[X] & 0x01);
-          v[X]   = v[X] >> 1;
-          break;
+          v[X] >>= 1;
+          return SUCCESS;
 
           /*
-            8xy7 - SUBN Vx, Vy
-            Set Vx = Vy - Vx, set VF = NOT borrow.
+            8XY7 - SUBN VX, VY
+            Set VX = VY - VX, set VF = NOT borrow.
 
-            If Vy > Vx, then VF is set to 1, otherwise 0. Then Vx is
-            subtracted from Vy, and the results stored in Vx.
+            If VY > VX, then VF is set to 1, otherwise 0. Then VX is
+            subtracted from VY, and the results stored in VX.
           */
         case 0x07:
-          v[0xF] = (v[Y] > v[X]);
-          v[X] = v[Y] - v[X];
-          break;
+          v[0xF] = (v[Y] >= v[X]);
+          v[X]   = (v[Y] - v[X]);
+          return SUCCESS;
 
           /*
-            8xyE - SHL Vx {, Vy}
-            Originally: Set Vx = Vy SHL 1
-            Today: Set Vx = Vx SHL 1
+            8XYE - SHL VX {, VY}
+            Originally: Set VX = VY SHL 1
+            Today: Set VX = VX SHL 1
 
-            If the most-significant bit of Vx is 1, then VF is set to 1,
-            otherwise to 0. Then Vx is multiplied by 2.
+            If the most-significant bit of VX is 1, then VF is set to 1,
+            otherwise to 0. Then VX is multiplied by 2.
           */
         case 0x0E:
-          v[0xF] = (v[X] & 0x80) && 1;
-          v[X]   = v[X] << 1;
-          break;
+          v[0xF] = ((v[X] & 0x80) ? 1 : 0);
+          v[X] <<= 1;
+          return SUCCESS;
 
         default:
-          print_invalidopcode(opcode.word);
-          return 1;
+          return INVALID_OPCODE;
         }
-      break;
 
     case 0x90:
       switch(opcode.byte.low & 0x0F)
         {
           /*
-            9xy0 - SNE Vx, Vy
-            Skip next instruction if Vx != Vy.
+            9XY0 - SNE VX, VY
+            Skip next instruction if VX != VY.
 
-            The values of Vx and Vy are compared, and if they are not equal, the
+            The values of VX and VY are compared, and if they are not equal, the
             program counter is increased by 2.
           */
         case 0x00:
           if(v[X] != v[Y])
             PC += 2;
-          break;
+          return SUCCESS;
 
           /*
-            9xy1 - MUL Vx, Vy
+            9XY1 - MUL VX, VY
             Set VF,VX = VX * VY
 
             Set VF, VX equal to VX times VY where VF is the most
@@ -457,10 +491,10 @@ chip8_process()
             v[0xF] = result.h;
             v[X]   = result.l;
           }
-          break;
+          return SUCCESS;
 
           /*
-            9xy2 - DIV Vx, Vy
+            9XY2 - DIV VX, VY
             Set VF,VX = VX / VY
 
             Set VX equal to VX divided by VY where VF is the remainder.
@@ -468,10 +502,10 @@ chip8_process()
         case 0x02:
           v[X]   = v[X] / v[Y];
           v[0xF] = v[X] % v[Y];
-          break;
+          return SUCCESS;
 
           /*
-            9xy3 - BCD VX, VY
+            9XY3 - BCD VX, VY
             Convert VX, VY as a 16bit word to BCD at I
 
             Let VX, VY be treated as a 16bit word with VX the most
@@ -480,252 +514,265 @@ chip8_process()
             does not change.
           */
         case 0x03:
-          bcd_convert_16bit(XY,&RAM[I]);
-          break;
+          {
+            struct {char l; char h;} tmp;
+
+            tmp.h = v[X];
+            tmp.l = v[Y];
+
+            bcd_convert_16bit(tmp,&RAM[I]);
+          }
+          return SUCCESS;
 
         default:
-          print_invalidopcode(opcode.word);
-          return 1;
+          return INVALID_OPCODE;
         }
-      break;
 
       /*
-        Annn - LD I, addr
-        Set I = nnn.
+        ANNN - LD I, addr
+        Set I = NNN.
 
         The value of register I is set to nnn.
       */
     case 0xA0:
-      I = ADDR;
-      break;
+      I = NNN;
+      return SUCCESS;
 
       /*
-        Bnnn - JP V0, addr
-        Jump to location nnn + V0.
+        BNNN - JP V0, addr
+        Jump to location NNN + V0.
 
-        The program counter is set to nnn plus the value of V0.
+        The program counter is set to NNN plus the value of V0.
       */
     case 0xB0:
-      PC = ADDR + (int)v[0];
-      break;
+      PC = NNN + (int)v[0];
+      return SUCCESS;
 
       /*
-        Cxkk - RND Vx, byte
-        Set Vx = random byte AND kk.
+        CXNN - RND VX, NN
+        Set VX = random byte AND NN.
 
         The interpreter generates a random number from 0 to 255, which
-        is then ANDed with the value kk. The results are stored in
-        Vx. See instruction 8xy2 for more information on AND.
+        is then ANDed with the value NN. The results are stored in
+        VX.
       */
     case 0xC0:
-      v[X] = ((char)rand() & KK);
-      break;
+      v[X] = ((char)rand() & NN);
+      return SUCCESS;
 
     case 0xD0:
       /*
-        Dxyn - DRW Vx, Vy, nibble
-        Display n-byte sprite starting at memory location I at (Vx, Vy), set VF = collision.
+        DXYN - DRW VX, VY, N
+        Display N-byte sprite starting at memory location I at (VX, VY), set VF = collision.
 
         The interpreter reads n bytes from memory, starting at the address
         stored in I. These bytes are then displayed as sprites on screen
-        at coordinates (Vx, Vy). Sprites are XORed onto the existing
+        at coordinates (VX, VY). Sprites are XORed onto the existing
         screen. If this causes any pixels to be erased, VF is set to 1,
         otherwise it is set to 0. If the sprite is positioned so part of
         it is outside the coordinates of the display, it wraps around to
-        the opposite side of the screen. See instruction 8xy3 for more
+        the opposite side of the screen. See instruction 8XY3 for more
         information on XOR, and section 2.4, Display, for more information
         on the Chip-8 screen and sprites.
       */
-      v[0xF] = chip8_put_sprite(&RAM[I],v[X],v[Y],K);
-      break;
+      v[0xF] = chip8_put_sprite(&RAM[I],v[X],v[Y],N);
+      return SUCCESS;
 
     case 0xE0:
       switch(opcode.byte.low)
         {
           /*
-            Ex9E - SKP Vx
-            Skip next instruction if key with the value of Vx is pressed.
+            Ex9E - SKP VX
+            Skip next instruction if key with the value of VX is pressed.
 
-            Checks the keyboard, and if the key corresponding to the value of Vx
+            Checks the keyboard, and if the key corresponding to the value of VX
             is currently in the down position, PC is increased by 2.
           */
         case 0x9E:
           keymask |= (1 << v[X]);
           if(key_pressed(v[X]))
             PC += 2;
-          break;
+          return SUCCESS;
 
           /*
-            ExA1 - SKNP Vx
-            Skip next instruction if key with the value of Vx is not pressed.
+            ExA1 - SKNP VX
+            Skip next instruction if key with the value of VX is not pressed.
 
-            Checks the keyboard, and if the key corresponding to the value of Vx
+            Checks the keyboard, and if the key corresponding to the value of VX
             is currently in the up position, PC is increased by 2.
           */
         case 0xA1:
           keymask |= (1 << v[X]);
           if(!key_pressed(v[X]))
             PC += 2;
-          break;
+          return SUCCESS;
 
         default:
-          print_invalidopcode(opcode.word);
-          return 1;
+          return INVALID_OPCODE;
         }
-      break;
 
     case 0xF0:
       switch(opcode.byte.low)
         {
           /*
-            Fx07 - LD Vx, DT
-            Set Vx = delay timer value.
+            FX07 - LD VX, DT
+            Set VX = delay timer value.
 
-            The value of DT is placed into Vx.
+            The value of DT is placed into VX.
           */
         case 0x07:
           v[X] = delay_timer;
-          break;
+          return SUCCESS;
 
           /*
-            Fx0A - LD Vx, K
-            Wait for a key press, store the value of the key in Vx.
+            FX0A - LD VX, N
+            Wait for a key press, store the value of the key in VX.
 
-            All execution stops until a key is pressed, then the value of that key is stored in Vx.
+            All execution stops until a key is pressed, then the value of that key is stored in VX.
           */
         case 0x0A:
           v[X] = wait_for_key();
-          break;
+          return SUCCESS;
 
           /*
-            Fx15 - LD DT, Vx
-            Set delay timer = Vx.
+            FX15 - LD DT, VX
+            Set delay timer = VX.
 
-            DT is set equal to the value of Vx.
+            DT is set equal to the value of VX.
           */
         case 0x15:
           delay_timer = v[X];
-          break;
+          return SUCCESS;
 
           /*
-            Fx18 - LD ST, Vx
-            Set sound timer = Vx.
+            FX18 - LD ST, VX
+            Set sound timer = VX.
 
-            ST is set equal to the value of Vx.
+            ST is set equal to the value of VX.
           */
-        case 0x18: /* 0xfr18 : ssound vr */
+        case 0x18:
           sound_timer = v[X];
           if(sound_timer != 0)
             *psg_ctrl = PSG_CTRL_ENABLED_FULL_VOL;
-          break;
+          return SUCCESS;
 
           /*
-            Fx1E - ADD I, Vx
-            Set I = I + Vx.
+            FX1E - ADD I, VX
+            Set I = I + VX.
 
-            The values of I and Vx are added, and the results are stored in I.
+            The values of I and VX are added, and the results are stored in I.
           */
         case 0x1E:
-          I = (I + v[X]);
+          I += v[X];
           v[0xF] = (I > 0x0FFF);
-          break;
+          I &= 0x0FFF;
+          return SUCCESS;
 
           /*
-            Fx29 - LD F, Vx
-            Set I = location of sprite for digit Vx.
+            FX29 - LD F, VX
+            Set I = location of sprite for digit VX.
 
             The value of I is set to the location for the hexadecimal sprite
-            corresponding to the value of Vx. See section 2.4, Display, for more
-            information on the Chip-8 hexadecimal font.
+            corresponding to the value of VX.
           */
         case 0x29:
-          I = ((int)v[X] * 5);
-          break;
+          I = chip8_font_8x5_loc(v[X]);
+          return SUCCESS;
 
           /*
-            Fx30 - LD HF, Vx
-            Set I = location of sprite for large digit Vx.
+            FX30 - LD HF, VX
+            Set I = location of sprite for large digit VX.
 
             The value of I is set to the location for the hexadecimal sprite
-            corresponding to the value of Vx. See section 2.4, Display, for more
-            information on the Chip-8 hexadecimal font.
+            corresponding to the value of VX.
           */
         case 0x30:
-          /* positioned after the 5x8 font */
-          I = (((int)v[X] * 10) + (16 * 5));
-          break;
+          I = chip8_font_16x10_loc(v[X]);
+          return SUCCESS;
 
           /*
-            Fx33 - LD B, Vx
-            Store BCD representation of Vx in memory locations I, I+1, and I+2.
+            FX33 - LD B, VX
+            Store BCD representation of VX in memory locations I, I+1, and I+2.
 
-            The interpreter takes the decimal value of Vx, and places the
+            The interpreter takes the decimal value of VX, and places the
             hundreds digit in memory at location in I, the tens digit at
             location I+1, and the ones digit at location I+2.
           */
         case 0x33:
           bcd_convert_8bit(v[X],&RAM[I]);
-          break;
+          return SUCCESS;
 
           /*
-            Fx55 - LD [I], Vx
-            Store registers V0 through Vx in memory starting at location I.
+            FX55 - LD [I], VX
+            Store registers V0 through VX in memory starting at location I.
 
-            The interpreter copies the values of registers V0 through Vx
+            The interpreter copies the values of registers V0 through VX
             into memory, starting at the address in I.
           */
         case 0x55:
           memcpy(&RAM[I],&v[0],X+1);
-          I += X + 1;
-          break;
+          return SUCCESS;
 
           /*
-            Fx65 - LD Vx, [I]
-            Read registers V0 through Vx from memory starting at location I.
+            FX65 - LD VX, [I]
+            Read registers V0 through VX from memory starting at location I.
 
             The interpreter reads values from memory starting at location
-            I into registers V0 through Vx.
+            I into registers V0 through VX.
           */
         case 0x65:
           memcpy(&v[0],&RAM[I],X+1);
-          I += X + 1;
-          break;
+          return SUCCESS;
 
           /*
-            Fx75 - DISP Vx
-            Display the value of Vx on the hex display.
+            FX75 - DISP VX
+            CHIP-8E Display the value of VX on the hex display.
 
-            Additional "F" instruction added for the Elf
+            FX75 - LD R, VX
+            SCHIP-8 Store V0 through VX to HP-48 RPL user flags (X <= 7).
           */
         case 0x75:
-          break;
+          memcpy(&v[0],&v48[0],((X+1) & 0x03));
+          return SUCCESS;
 
           /*
-            Fx94 - LD ASCII, Vx
+            FX85 - LD VX, R
+            SCHIP-8 Store HP-48 RPL user flags in V0 through VX (X <= 7).
+          */
+        case 0x85:
+          memcpy(&v48[0],&v[0],((X+1) & 0x03));
+          return SUCCESS;
+
+          /*
+            FX94 - LD ASCII, VX
             Load I with location of ASCII char
           */
         case 0x94:
-          break;
+          return UNSUPPORTED_OPCODE;
 
         default:
-          print_invalidopcode(opcode.word);
-          return 1;
+          return INVALID_OPCODE;
         }
-      break;
 
     default:
-      print_invalidopcode(opcode.word);
-      return 1;
+      return INVALID_OPCODE;
     }
 
-  return 0;
+  return INVALID_OPCODE;
 }
 
 void
-print_invalidopcode(int opc)
+print_invalid_opcode(int opc)
 {
   put_string("Unknown opcode:", 0, 27);
   put_hex(opc, 4, 17, 27);
+}
+
+void
+print_unsupported_opcode(int opc)
+{
+  put_string("Unsupported opcode:", 0, 27);
+  put_hex(opc, 4, 22, 27);
 }
 
 void

@@ -12,6 +12,7 @@ There are lots of misc resources on CHIP-8 around the web however I found that t
 * CHIP-8X: `an expanded version of the original CHIP-8 interpreter which allows easy control over RCA's new options for the VIP: color card, simple sound, and expansion hex keyboard.`
 * CHIP-8I: From `VIPER Volume 1 Issue 03`: `A Modification of CHIP-8 to Provide I/O Instructions` by Rick Simpson
 * CHIP-10: A high resolution mode (128x64) on top of the CDP-1861 as described in `VIPER Volume 1 Issue 7`.
+* HiRes CHIP-8: A version with a high resolution (64x64) mode.
 * SCHIP-8: An extended version of CHIP-8 created originally for the HP-48 calculator. Provided twice the resolution of the original CHIP-8 platform plus several additional instructions.
 
 **NOTE:** Some of the above conflict with one another which is why you may see opcodes that overlap.
@@ -22,6 +23,7 @@ Each opcode is 16bits. References to registers are usually refered to by `X` and
 
 | Opcode | Mnemonic | Origin/Version | Description |
 |--------|----------|----------------|-------------|
+| 00BN   | SCU N    | SCHIP-8 | Scroll display `N` lines up. |
 | 00CN   | SCD N    | SCHIP-8 | Scroll display `N` lines down. |
 | 00E0   | CLS      | CHIP-8  | Clears the display. Sets all pixels to `off`. |
 | 00EE   | RET      | CHIP-8  | Return from subroutine. Set the `PC` to the address at the top of the stack and subtract `1` from the `SP`. |
@@ -78,8 +80,8 @@ Each opcode is 16bits. References to registers are usually refered to by `X` and
 | FX29   | LD I, FONT(VX) | CHIP-8 | Set `I` to the address of the CHIP-8 8x5 font sprite representing the value in `VX`. |
 | FX30   | LD I, FONT(VX) | SCHIP-8 | Set `I` to the address of the SCHIP-8 16x10 font sprite representing the value in `VX`. |
 | FX33   | BCD VX | CHIP-8 | Convert that word to BCD and store the 3 digits at memory location `I` through `I+2`. `I` does not change. |
-| FX55   | LD [I], VX | CHIP-8 | Store registers `V0` through `VX` in memory starting at location `I`. `I` is incremented for each value copied. `I = I + X + 1`. '
-| FX65   | LD VX, [I] | CHIP-8 | Copy values from memory location `I` through `I + X` into registers `V0` through `VX`. `I` is incremented for each value copied. `I = I + X + 1`. |
+| FX55   | LD [I], VX | CHIP-8 | Store registers `V0` through `VX` in memory starting at location `I`. `I` does not change. '
+| FX65   | LD VX, [I] | CHIP-8 | Copy values from memory location `I` through `I + X` into registers `V0` through `VX`. `I` does not change. |
 | FX75   | DISP VX | CHIP-8E | Display the value of `VX` on the COSMAC Elf hex display. |
 | FX75   | LD R, VX | SCHIP-8 | Store `V0` through `VX` to HP-48 RPL user flags (X <= 7). |
 | FX85   | LD VX, R | SCHIP-8 | Read `V0` through `VX` to HP-48 RPL user flags (X <= 7) |

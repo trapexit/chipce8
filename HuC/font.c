@@ -66,3 +66,15 @@ chip8_font_init(char *dest)
 {
   memcpy(dest, font, sizeof(font));
 }
+
+int
+chip8_font_8x5_loc(char chr)
+{
+  return (int)((chr & 0x0F) * 5);
+}
+
+int
+chip8_font_16x10_loc(char chr)
+{
+  return (int)(((chr & 0x0F) * 10) + (16 * 5));
+}
