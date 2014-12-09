@@ -24,7 +24,6 @@
 
 #define BLINKY0       0x01CA
 #define BLINKY1       0x81CA
-#define CAVE          0x8154
 #define LEFT_RIGHT    0x0050
 #define LUNARLANDER   0x0054
 #define PONG_1P       0x0012
@@ -36,6 +35,9 @@
 #define SYZYGY_SELECT 0xC000
 #define TANK          0x0174
 #define TETRIS        0x00F0
+#define UDLR          0x0154
+#define UDLR_TRIGGER  0x8154
+
 
 #define JOY_UP_SEL    0x14
 #define JOY_UP_RUN    0x18
@@ -64,8 +66,9 @@ key_pressed(const unsigned char key)
     case BLINKY0:
     case BLINKY1:
       return blinky_keys(key);
-    case CAVE:
-      return cave_keys(key);
+    case UDLR:
+    case UDLR_TRIGGER:
+      return udlr_keys(key);
     case LEFT_RIGHT:
       return left_right_keys(key);
     case LUNARLANDER:
@@ -310,7 +313,7 @@ tetris_keys(char key)
 
 static
 char
-cave_keys(char key)
+udlr_keys(char key)
 {
   switch(key)
     {
