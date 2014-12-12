@@ -1,0 +1,72 @@
+#!/usr/bin/python
+
+import os
+import re
+import md5
+
+TEMPLATE = \
+"""\
+#incbin({0},"{1}");
+#define {0}_SIZE {2}
+"""
+
+CASE = \
+"""\
+  case {0}:
+    fmemcpy(dest,{1},{1}_SIZE);
+    break;
+"""
+
+SWITCHFUN = \
+"""\
+void
+chip8_load_rom(char* dest, int rom)
+{{
+  switch(rom)
+  {{
+{0}
+  default:
+    break;
+  }}
+}}
+"""
+
+def clean_var(name):
+    m = md5.new()
+    m.update(name)
+    return 'r'+m.hexdigest()
+
+def calcgamedata(path):
+    data = []
+    roms = os.listdir(path)
+    roms.sort()
+    for rom in roms:
+        (filename,ext) = os.path.splitext(rom)
+        if ext == '.ch8':
+            fullpath = os.path.join(path,rom)
+            size = os.stat(fullpath).st_size
+            d = (filename,fullpath,size)
+            data.append(d)
+    return data
+
+data = calcgamedata('roms/chip8')
+
+with open('roms.c','w') as f:
+    for (name,path,size) in data:
+        output = TEMPLATE.format(clean_var(name),
+                                 path,
+                                 str(size))
+        f.write(output)
+
+    f.write("\nconst char *roms[] =\n{\n")
+    names = ['  "'+name+'"' for (name,path,size) in data]
+    f.write(',\n'.join(names))
+    f.write('\n};\n')
+
+    names = [clean_var(name) for (name,path,size) in data]
+    f.write('\n')
+    output = ""
+    for i in xrange(0,len(names)):
+        output += CASE.format(i,names[i])
+    output = SWITCHFUN.format(output)
+    f.write(output)
